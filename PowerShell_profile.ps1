@@ -17,6 +17,36 @@ Set-PSReadLineOption -PredictionSource History
 Set-PSReadLineOption -PredictionViewStyle ListView
 Set-PSReadLineOption -EditMode Windows
 
+# -------------------------------------------------------------------
+# DirPick — Alt+Shift+F — fuzzy-pick from cwd, insert at cursor
+# -------------------------------------------------------------------
+# Requires fzf (winget install junegunn.fzf)
+
+Set-PSReadLineKeyHandler -Key "Alt+Shift+F" `
+    -BriefDescription "DirPick" `
+    -LongDescription "Pick a file/folder from cwd and insert at cursor" `
+    -ScriptBlock {
+
+    $items = Get-ChildItem | ForEach-Object {
+        if ($_.PSIsContainer) { "$($_.Name)/" } else { $_.Name }
+    }
+
+    $selected = $items | fzf --prompt="ls> " --height=40% --layout=reverse
+
+    if ($selected) {
+        [Microsoft.PowerShell.PSConsoleReadLine]::Insert($selected.TrimEnd('/'))
+    }
+}
+
+# -------------------------------------------------------------------
+# General navigation
+# -------------------------------------------------------------------
+
+function docs  { Set-Location 'C:\Users\andre\Documents' }
+function andre { Set-Location 'C:\Users\andre' }
+function root  { Set-Location 'C:\' }
+function dot   { Set-Location 'C:\Users\andre\dotfiles' }
+
 
 # -------------------------------------------------------------------
 # Vault navigation
