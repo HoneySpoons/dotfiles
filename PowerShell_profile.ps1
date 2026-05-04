@@ -58,12 +58,50 @@ function vlog { code 'C:\Vaults\EVA\wiki\log.md' }
 
 
 # -------------------------------------------------------------------
+# Vault search and navigation
+# -------------------------------------------------------------------
+# vsearch "term"     — full-text search across all vault markdown files
+# vopen "wiki/log"   — open a specific note in Obsidian by path
+# vrecent            — list the 10 most recently modified wiki notes
+
+function vsearch {
+    param([string]$query)
+    Select-String -Path "C:\Vaults\EVA\**\*.md" -Pattern $query -CaseSensitive:$false |
+    Select-Object Filename, LineNumber, Line
+}
+
+function vopen {
+    param([string]$file)
+    Start-Process "obsidian://open?vault=EVA&file=$([uri]::EscapeDataString($file))"
+}
+
+function vrecent {
+    param([int]$n = 10)
+    Get-ChildItem "C:\Vaults\EVA\wiki" -Recurse -Filter "*.md" |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First $n Name, LastWriteTime
+}
+
+
+
+
+
+
+
+
+
+
+
+
+# -------------------------------------------------------------------
 # Code workspace navigation
 # -------------------------------------------------------------------
 # Note: `code` itself is the VS Code CLI (e.g. `code .` to open the
 # current directory in VS Code). Don't shadow it with a function.
 
-function cdcode { Set-Location 'C:\Users\andre\code' }
+function cdcode    { Set-Location 'C:\Users\andre\code' }
+
+function changelog { Set-Location 'C:\Users\andre\code\changelog-app' }
 
 
 # -------------------------------------------------------------------
