@@ -60,9 +60,17 @@ function dot   { Set-Location 'C:\Users\andre\dotfiles' }
 # Vault navigation
 # -------------------------------------------------------------------
 
+# EVA 
 function eva  { Set-Location 'C:\Vaults\EVA' }
 function wiki { Set-Location 'C:\Vaults\EVA\wiki' }
 function vlog { code 'C:\Vaults\EVA\wiki\log.md' }
+
+# AUD
+function aud { Set-Location 'C:\Vaults\AUD' }
+function alog { code 'C:\Vaults\AUD\audit-log.md' }
+
+# CLI
+function cli { Set-Location 'C:\Users\andre\code' }
 
 
 # -------------------------------------------------------------------
@@ -94,7 +102,7 @@ function vrecent {
 # Code workspace navigation and sync
 # -------------------------------------------------------------------
 # Note: `code` itself is the VS Code CLI (e.g. `code .` to open the
-# current directory in VS Code). Don't shadow it with a function.
+# current directory in VS Code). Don't shadow it with a function. 'cli' is pwsh clear-item, so avoid that too.
 
 function cdcode    { Set-Location 'C:\Users\andre\code' }
 
@@ -107,64 +115,139 @@ function handoff { Set-Location 'C:\Vaults\EVA\claude-sync' }
 function returns { Set-Location 'C:\Users\andre\code\claude-sync' }
 
 function csync {
-    # Agent roots — single source of truth. Update if paths change (e.g. C:\Vaults → C:\agents).
+    param([Parameter(Position=0)][string]$Mode = "")
+
+    # Agent roots — single source of truth. Update if paths change (e.g. C:\Vaults -> C:\agents).
     $EVA_ROOT = "C:\Vaults\EVA"
     $CLI_ROOT = "C:\Users\andre\code"
     $AUD_ROOT = "C:\Vaults\AUD"
 
-    # Walk up from $PWD looking for a CLAUDE.md — that marks an agent root.
-    $current = (Get-Location).Path
-    $agentRoot = $null
-    while ($current -and ($current -ne (Split-Path $current -Parent))) {
-        if (Test-Path (Join-Path $current "CLAUDE.md")) {
-            $agentRoot = $current
-            break
-        }
-        $current = Split-Path $current -Parent
+    # Flow definitions — the four directed copies in the ecosystem. Single source of truth.
+    # Skip lets each destination keep its own README: audit-returns/ (AUD's write dir) and
+    # aud/findings/ (the read-side mirror) document different things and must not clobber each other.
+    $flows = @(
+        [pscustomobject]@{ Name="EVA -> CLI"; Src="$EVA_ROOT\claude-sync";               Dst="$CLI_ROOT\claude-sync";  Skip=@() },
+        [pscustomobject]@{ Name="CLI -> EVA"; Src="$CLI_ROOT\claude-sync";               Dst="$EVA_ROOT\claude-sync";  Skip=@() },
+        [pscustomobject]@{ Name="AUD -> EVA"; Src="$AUD_ROOT\claude-sync\audit-returns"; Dst="$EVA_ROOT\aud\findings"; Skip=@('README.md') },
+        [pscustomobject]@{ Name="AUD -> CLI"; Src="$AUD_ROOT\claude-sync\audit-returns"; Dst="$CLI_ROOT\aud\findings"; Skip=@('README.md') }
+    )
+
+    # Source files for a flow (recursive), minus skipped leaf names.
+    function _srcFiles($flow) {
+        if (-not (Test-Path $flow.Src)) { return @() }
+        Get-ChildItem -LiteralPath $flow.Src -Recurse -File -ErrorAction SilentlyContinue |
+            Where-Object { $flow.Skip -notcontains $_.Name }
     }
 
-    if (-not $agentRoot) {
-        Write-Host "csync: not in a valid agent directory (no CLAUDE.md found walking up from $PWD)" -ForegroundColor Red
+    # True if the source file is missing at, or differs in content from, the destination.
+    # Compare by length first (cheap), then by hash on a tie — mtime is deliberately ignored
+    # so identical content with a newer timestamp does NOT register as drift.
+    function _needsCopy($f, $target) {
+        if (-not (Test-Path -LiteralPath $target)) { return $true }
+        if ((Get-Item -LiteralPath $target).Length -ne $f.Length) { return $true }
+        return (Get-FileHash -LiteralPath $f.FullName).Hash -ne (Get-FileHash -LiteralPath $target).Hash
+    }
+
+    # Count of source files that would be copied (drift). Read-only.
+    function _drift($flow) {
+        $base = (Resolve-Path $flow.Src).Path
+        $n = 0
+        foreach ($f in (_srcFiles $flow)) {
+            $rel = $f.FullName.Substring($base.Length).TrimStart('\')
+            if (_needsCopy $f (Join-Path $flow.Dst $rel)) { $n++ }
+        }
+        return $n
+    }
+
+    # Perform a flow's copy (new/changed files only). Returns count copied.
+    function _run($flow) {
+        if (-not (Test-Path $flow.Src)) {
+            Write-Host ("  {0,-12}: source missing ({1}) - skipped" -f $flow.Name, $flow.Src) -ForegroundColor Yellow
+            return 0
+        }
+        if (-not (Test-Path $flow.Dst)) { New-Item -ItemType Directory -Path $flow.Dst -Force | Out-Null }
+        $base = (Resolve-Path $flow.Src).Path
+        $copied = 0
+        foreach ($f in (_srcFiles $flow)) {
+            $rel = $f.FullName.Substring($base.Length).TrimStart('\')
+            $target = Join-Path $flow.Dst $rel
+            if (_needsCopy $f $target) {
+                $tdir = Split-Path $target -Parent
+                if (-not (Test-Path -LiteralPath $tdir)) { New-Item -ItemType Directory -Path $tdir -Force | Out-Null }
+                Copy-Item -LiteralPath $f.FullName -Destination $target -Force
+                $copied++
+            }
+        }
+        $tag   = if ($copied -eq 0) { "up to date" } else { "+$copied file" + $(if ($copied -ne 1) { 's' }) }
+        $color = if ($copied -eq 0) { 'DarkGray' } else { 'Green' }
+        Write-Host ("  {0,-12}: {1}" -f $flow.Name, $tag) -ForegroundColor $color
+        return $copied
+    }
+
+    # ---- status: read-only drift report across all flows, from anywhere ----
+    if ($Mode -eq 'status') {
+        Write-Host "csync status" -ForegroundColor Cyan
+        $total = 0
+        foreach ($flow in $flows) {
+            if (-not (Test-Path $flow.Src)) {
+                Write-Host ("  {0,-12}: source missing" -f $flow.Name) -ForegroundColor Yellow
+                continue
+            }
+            $d = _drift $flow
+            $total += $d
+            $color = if ($d -eq 0) { 'DarkGray' } else { 'Yellow' }
+            Write-Host ("  {0,-12}: {1} behind" -f $flow.Name, $d) -ForegroundColor $color
+        }
+        if ($total -eq 0) { Write-Host "  ALL CURRENT" -ForegroundColor Green }
+        else { Write-Host ("  {0} file(s) behind - run 'csync all' to reconcile" -f $total) -ForegroundColor Yellow }
         return
     }
 
-    # Normalize for comparison
+    # ---- all: run every flow regardless of cwd ----
+    if ($Mode -eq 'all') {
+        Write-Host "csync all" -ForegroundColor Cyan
+        $total = 0
+        foreach ($flow in $flows) { $total += (_run $flow) }
+        if ($total -eq 0) { Write-Host "  already current - nothing copied" -ForegroundColor DarkGray }
+        else { Write-Host ("  done - {0} file(s) copied" -f $total) -ForegroundColor Green }
+        return
+    }
+
+    if ($Mode -ne '') {
+        Write-Host "csync: unknown argument '$Mode'. Use: csync | csync status | csync all" -ForegroundColor Red
+        return
+    }
+
+    # ---- default (no arg): route by which agent root you're standing in ----
+    $current = (Get-Location).Path
+    $agentRoot = $null
+    while ($current -and ($current -ne (Split-Path $current -Parent))) {
+        if (Test-Path (Join-Path $current "CLAUDE.md")) { $agentRoot = $current; break }
+        $current = Split-Path $current -Parent
+    }
+    if (-not $agentRoot) {
+        Write-Host "csync: not in a valid agent directory (no CLAUDE.md found walking up from $PWD)" -ForegroundColor Red
+        Write-Host "  tip: 'csync all' syncs everything from anywhere; 'csync status' shows drift." -ForegroundColor Yellow
+        return
+    }
     $agentRoot = $agentRoot.TrimEnd('\')
 
-    switch ($agentRoot) {
-        $EVA_ROOT {
-            Write-Host "csync: EVA -> CLI" -ForegroundColor Cyan
-            $src = Join-Path $EVA_ROOT "claude-sync\*"
-            $dst = Join-Path $CLI_ROOT "claude-sync\"
-            if (-not (Test-Path $dst)) { New-Item -ItemType Directory -Path $dst | Out-Null }
-            Copy-Item -Path $src -Destination $dst -Recurse -Force
-            Write-Host "  pushed $src to $dst" -ForegroundColor Green
-        }
-        $CLI_ROOT {
-            Write-Host "csync: CLI -> EVA" -ForegroundColor Cyan
-            $src = Join-Path $CLI_ROOT "claude-sync\*"
-            $dst = Join-Path $EVA_ROOT "claude-sync\"
-            if (-not (Test-Path $dst)) { New-Item -ItemType Directory -Path $dst | Out-Null }
-            Copy-Item -Path $src -Destination $dst -Recurse -Force
-            Write-Host "  pushed $src to $dst" -ForegroundColor Green
-        }
-        $AUD_ROOT {
-            Write-Host "csync: AUD -> EVA + CLI" -ForegroundColor Cyan
-            $src = Join-Path $AUD_ROOT "claude-sync\audit-returns\*"
-            $dstEva = Join-Path $EVA_ROOT "aud\findings\"
-            $dstCli = Join-Path $CLI_ROOT "aud\findings\"
-            if (-not (Test-Path $dstEva)) { New-Item -ItemType Directory -Path $dstEva -Force | Out-Null }
-            if (-not (Test-Path $dstCli)) { New-Item -ItemType Directory -Path $dstCli -Force | Out-Null }
-            Copy-Item -Path $src -Destination $dstEva -Recurse -Force
-            Copy-Item -Path $src -Destination $dstCli -Recurse -Force
-            Write-Host "  pushed $src to $dstEva" -ForegroundColor Green
-            Write-Host "  pushed $src to $dstCli" -ForegroundColor Green
-        }
-        default {
-            Write-Host "csync: not in a valid agent directory (resolved root: $agentRoot)" -ForegroundColor Red
-            Write-Host "  expected one of: $EVA_ROOT, $CLI_ROOT, $AUD_ROOT" -ForegroundColor Yellow
-        }
+    $route = switch ($agentRoot) {
+        $EVA_ROOT { @("EVA -> CLI") }
+        $CLI_ROOT { @("CLI -> EVA") }
+        $AUD_ROOT { @("AUD -> EVA","AUD -> CLI") }
+        default   { $null }
     }
+    if (-not $route) {
+        Write-Host "csync: not a recognized agent root: $agentRoot" -ForegroundColor Red
+        Write-Host "  expected one of: $EVA_ROOT, $CLI_ROOT, $AUD_ROOT" -ForegroundColor Yellow
+        return
+    }
+    Write-Host ("csync: {0}" -f ($route -join ' + ')) -ForegroundColor Cyan
+    $total = 0
+    foreach ($name in $route) { $total += (_run ($flows | Where-Object Name -eq $name)) }
+    if ($total -eq 0) { Write-Host "  already current - nothing copied" -ForegroundColor DarkGray }
+    else { Write-Host ("  done - {0} file(s) copied" -f $total) -ForegroundColor Green }
 }
 
 
