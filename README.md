@@ -10,7 +10,7 @@ Personal terminal/editor configuration, version-controlled for portability acros
 
 - **PSReadLine** — inline history-based predictions (gray ghost text, right-arrow to accept) plus ListView dropdown for matching history.
 - **Vault navigation** — `eva` cd's to `C:\Vaults\EVA`, `wiki` to `C:\Vaults\EVA\wiki`, `vlog` opens `wiki/log.md` in VS Code.
-- **Code workspace navigation** — `cdcode` cd's to `C:\Users\andre\code`. (Note: `code` itself is the VS Code launcher and isn't shadowed.)
+- **Code workspace navigation** — `cdcode` cd's to `C:\Vaults\CLI`. (Note: `code` itself is the VS Code launcher and isn't shadowed.)
 - **Git shortcuts** — `gs` (status), `gd` (diff), `ga` (add), `gcommit`, `gpush`, `gpull`, `glog` (last 20 commits, oneline graph).
 - **posh-git** — git-aware prompt: shows current branch + dirty/staged/ahead-behind indicators when inside a git repo.
 

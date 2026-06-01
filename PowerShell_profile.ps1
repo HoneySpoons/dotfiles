@@ -70,7 +70,7 @@ function aud { Set-Location 'C:\Vaults\AUD' }
 function alog { code 'C:\Vaults\AUD\audit-log.md' }
 
 # CLI
-function cli { Set-Location 'C:\Users\andre\code' }
+function cli { Set-Location 'C:\Vaults\CLI' }
 
 
 # -------------------------------------------------------------------
@@ -104,22 +104,22 @@ function vrecent {
 # Note: `code` itself is the VS Code CLI (e.g. `code .` to open the
 # current directory in VS Code). Don't shadow it with a function. 'cli' is pwsh clear-item, so avoid that too.
 
-function cdcode    { Set-Location 'C:\Users\andre\code' }
+function cdcode    { Set-Location 'C:\Vaults\CLI' }
 
-function changelog { Set-Location 'C:\Users\andre\code\changelog-app' }
+function changelog { Set-Location 'C:\Vaults\CLI\changelog-app' }
 
-function prev { Set-Location 'C:\Users\andre\code\previous-coding-adventures' }
+function prev { Set-Location 'C:\Vaults\CLI\previous-coding-adventures' }
 
 function handoff { Set-Location 'C:\Vaults\EVA\claude-sync' }
 
-function returns { Set-Location 'C:\Users\andre\code\claude-sync' }
+function returns { Set-Location 'C:\Vaults\CLI\claude-sync' }
 
 function csync {
     param([Parameter(Position=0)][string]$Mode = "")
 
     # Agent roots — single source of truth. Update if paths change (e.g. C:\Vaults -> C:\agents).
     $EVA_ROOT = "C:\Vaults\EVA"
-    $CLI_ROOT = "C:\Users\andre\code"
+    $CLI_ROOT = "C:\Vaults\CLI"
     $AUD_ROOT = "C:\Vaults\AUD"
 
     # Flow definitions — the four directed copies in the ecosystem. Single source of truth.
