@@ -4,14 +4,37 @@
 # Keep this file portable — anything machine-specific belongs in $PROFILE itself,
 # not here.
 #
-# Repo: https://github.com/HoneySpoons/dotfiles  (update if/when this changes)
+# Repo: https://github.com/HoneySpoons/dotfiles
+
+# -------------------------------------------------------------------
+# Roots — the one place paths are written down
+# -------------------------------------------------------------------
+# Every navigation function and csync flow below derives from this table.
+# Moving the vaults (C:\Vaults -> C:\agents, a different drive, whatever)
+# is a one-line change here instead of a 20-site find-and-replace.
+#
+# $Agents keys are the four agents in the ecosystem. Hashtable lookup is
+# case-insensitive, so $Agents.eva and $Agents['EVA'] are the same thing.
+
+$Vaults = 'C:\Vaults'
+
+$Agents = @{
+    EVA = "$Vaults\EVA"   # Evolving Vault Archivist — wiki, concepts, handoff authoring
+    CLI = "$Vaults\CLI"   # Claude Code — the running codebase
+    AUD = "$Vaults\AUD"   # read-only auditor
+    DES = "$Vaults\DES"   # design studio — comps, decks, prototypes
+}
 
 # -------------------------------------------------------------------
 # Restart PowerShell
 # -------------------------------------------------------------------
+# Actually restarts: launches a fresh pwsh in this window's place, then exits.
+# (The old `$host.SetShouldExit(1)` only exited — in Windows Terminal that
+# just closes the tab.)
 
 function restart {
-    $host.SetShouldExit(1)
+    Start-Process pwsh -ArgumentList '-NoLogo' -WorkingDirectory (Get-Location).Path
+    exit
 }
 
 # -------------------------------------------------------------------
@@ -20,116 +43,221 @@ function restart {
 # As you type, PSReadLine shows a gray ghosted suggestion based on
 # your history. Right-arrow (or End) accepts it. F2 toggles between
 # inline view and ListView (a dropdown of matching history items).
+#
+# Guarded: prediction throws when there's no real console attached — a
+# redirected `pwsh -Command`, a script host, CI. That noise was firing on
+# every non-interactive shell before 2026-08-07. Note $Host.UI.Supports-
+# VirtualTerminal is NOT the right test (it still reports true when output
+# is piped); [Console]::IsOutputRedirected is.
 
-Set-PSReadLineOption -PredictionSource History
-Set-PSReadLineOption -PredictionViewStyle ListView
+if (-not [Console]::IsOutputRedirected) {
+    Set-PSReadLineOption -PredictionSource History
+    Set-PSReadLineOption -PredictionViewStyle ListView
+}
 Set-PSReadLineOption -EditMode Windows
 
 # -------------------------------------------------------------------
 # DirPick — Alt+Shift+F — fuzzy-pick from cwd, insert at cursor
 # -------------------------------------------------------------------
-# Requires fzf (winget install junegunn.fzf)
+# Requires fzf (winget install junegunn.fzf).
+#
+# History, so it doesn't get misdiagnosed a third time:
+#   2026-05-11  Defender quarantined fzf.exe on first execution (generic
+#               false-positive on unsigned Go TUI binaries). Commit b76e675
+#               blamed a BIOS update — it wasn't; Smart App Control reads 0.
+#   2026-08-07  fzf 0.74.2 installs, executes, and survives on disk. The
+#               pwsh 7.6 native-redirect regression that would have broken
+#               the pipe below is also gone as of 7.6.4 — verified with a
+#               real `@(...) | fzf --filter=...` round-trip. Handler restored.
+#
+# If Defender eats it again the handler no-ops with a message rather than
+# throwing mid-keystroke.
 
-# Set-PSReadLineKeyHandler -Key "Alt+Shift+F" `
-#     -BriefDescription "DirPick" `
-#     -LongDescription "Pick a file/folder from cwd and insert at cursor" `
-#     -ScriptBlock {
+Set-PSReadLineKeyHandler -Key "Alt+Shift+F" `
+    -BriefDescription "DirPick" `
+    -LongDescription "Pick a file/folder from cwd and insert at cursor" `
+    -ScriptBlock {
 
-#     $items = Get-ChildItem | ForEach-Object {
-#         if ($_.PSIsContainer) { "$($_.Name)/" } else { $_.Name }
-#     }
+    if (-not (Get-Command fzf -ErrorAction SilentlyContinue)) {
+        [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
+        Write-Host "DirPick: fzf not found (winget install junegunn.fzf)" -ForegroundColor Yellow
+        return
+    }
 
-#     $selected = $items | fzf --prompt="ls> " --height=40% --layout=reverse
+    $items = Get-ChildItem | ForEach-Object {
+        if ($_.PSIsContainer) { "$($_.Name)/" } else { $_.Name }
+    }
+    if (-not $items) { return }
 
-#     if ($selected) {
-#         [Microsoft.PowerShell.PSConsoleReadLine]::Insert($selected.TrimEnd('/'))
-#     }
-# }
+    $selected = $items | fzf --prompt="ls> " --height=40% --layout=reverse
+
+    if ($selected) {
+        [Microsoft.PowerShell.PSConsoleReadLine]::Insert($selected.TrimEnd('/'))
+    }
+}
 
 # -------------------------------------------------------------------
 # General navigation
 # -------------------------------------------------------------------
 
-function docs  { Set-Location 'C:\Users\andre\Documents' }
-function andre { Set-Location 'C:\Users\andre' }
+function docs  { Set-Location "$HOME\Documents" }
+function andre { Set-Location $HOME }
 function root  { Set-Location 'C:\' }
-function dot   { Set-Location 'C:\Users\andre\dotfiles' }
-
+function dot   { Set-Location "$HOME\dotfiles" }
 
 # -------------------------------------------------------------------
-# Vault navigation
+# Agent navigation
 # -------------------------------------------------------------------
+# Note: `code` is the VS Code CLI (`code .`) — don't shadow it.
+# Note: `cli` is NOT defined here. PowerShell ships `cli` as a built-in
+#       alias for Clear-Item, and aliases outrank functions in command
+#       resolution — a `function cli` is dead on arrival, it never runs.
+#       Use `cdcode` for C:\Vaults\CLI.
 
-# EVA 
-function eva  { Set-Location 'C:\Vaults\EVA' }
-function wiki { Set-Location 'C:\Vaults\EVA\wiki' }
-function vlog { code 'C:\Vaults\EVA\wiki\log.md' }
+# EVA
+function eva   { Set-Location $Agents.EVA }
+function wiki  { Set-Location "$($Agents.EVA)\wiki" }
+function vlog  { code "$($Agents.EVA)\wiki\log.md" }
 
 # AUD
-function aud { Set-Location 'C:\Vaults\AUD' }
-function alog { code 'C:\Vaults\AUD\audit-log.md' }
+function aud   { Set-Location $Agents.AUD }
+function alog  { code "$($Agents.AUD)\audit-log.md" }
 
-# CLI
-function cli { Set-Location 'C:\Vaults\CLI' }
+# DES
+function des   { Set-Location $Agents.DES }
+function dlog  { code "$($Agents.DES)\log.md" }
+function comps { Set-Location "$($Agents.DES)\comps" }
 
+# DES comps are single-file .dc.html artifacts whose entire purpose is
+# being looked at. `comp` opens the most recent one in the browser;
+# `comp <substring>` opens the newest match.
+function comp {
+    param([string]$Match = "")
+    $root = "$($Agents.DES)\comps"
+    if (-not (Test-Path $root)) { Write-Host "comp: no comps dir at $root" -ForegroundColor Red; return }
+
+    $found = Get-ChildItem -LiteralPath $root -Recurse -File -Filter "*.dc.html" -ErrorAction SilentlyContinue |
+             Where-Object { $Match -eq "" -or $_.Name -like "*$Match*" } |
+             Sort-Object LastWriteTime -Descending
+
+    if (-not $found) {
+        Write-Host "comp: no .dc.html matching '$Match' under $root" -ForegroundColor Yellow
+        return
+    }
+    Write-Host ("opening {0}  ({1:yyyy-MM-dd})" -f $found[0].Name, $found[0].LastWriteTime) -ForegroundColor Cyan
+    Start-Process $found[0].FullName
+    if ($found.Count -gt 1) {
+        Write-Host ("  {0} other match(es):" -f ($found.Count - 1)) -ForegroundColor DarkGray
+        $found | Select-Object -Skip 1 -First 5 | ForEach-Object {
+            Write-Host ("    {0}  ({1:yyyy-MM-dd})" -f $_.Name, $_.LastWriteTime) -ForegroundColor DarkGray
+        }
+    }
+}
+
+# CLI / code workspace
+function cdcode    { Set-Location $Agents.CLI }
+function changelog { Set-Location "$($Agents.CLI)\changelog-app" }
+function kuramoto  { Set-Location "$($Agents.CLI)\kuramoto-dev" }
+function prev      { Set-Location "$($Agents.CLI)\Previous-Coding-Adventures" }
+
+# Sync layer
+function handoff { Set-Location "$($Agents.EVA)\claude-sync" }   # EVA-side (canonical)
+function returns { Set-Location "$($Agents.CLI)\claude-sync" }   # CLI-side (mirror)
 
 # -------------------------------------------------------------------
-# Vault search and navigation
+# Vault search
 # -------------------------------------------------------------------
-# vsearch "term"     — full-text search across all vault markdown files
-# vopen "wiki/log"   — open a specific note in Obsidian by path
-# vrecent            — list the 10 most recently modified wiki notes
+# vsearch "term"            — full-text search EVA's markdown (recursive)
+# vsearch "term" -Agent All — search every agent tree
+# vopen "wiki/log"          — open a note in Obsidian by vault-relative path
+# vrecent                   — 10 most recently modified notes
+#
+# ⚠ The old implementation used Select-String -Path "...\**\*.md". PowerShell
+#   has NO recursive `**` glob — it parses as a single `*`, matching exactly
+#   one directory level. That searched 12 of 696 files (~5%); the entire wiki
+#   lives at depth 3-5 and was never once searched. Fixed 2026-08-07 by
+#   enumerating with Get-ChildItem -Recurse and piping into Select-String.
+
+function Get-VaultFiles {
+    param([string[]]$Roots)
+    foreach ($r in $Roots) {
+        if (-not (Test-Path $r)) { continue }
+        Get-ChildItem -LiteralPath $r -Recurse -File -Filter *.md -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '\\(node_modules|\.git|dist|build|\.expo)\\' }
+    }
+}
 
 function vsearch {
-    param([string]$query)
-    Select-String -Path "C:\Vaults\EVA\**\*.md" -Pattern $query -CaseSensitive:$false |
-    Select-Object Filename, LineNumber, Line
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory, Position = 0)][string]$Query,
+        [ValidateSet('EVA', 'CLI', 'AUD', 'DES', 'All')][string]$Agent = 'EVA',
+        [switch]$Regex
+    )
+
+    $roots = if ($Agent -eq 'All') { $Agents.Values } else { @($Agents[$Agent]) }
+    $files = @(Get-VaultFiles -Roots $roots)
+    if (-not $files) { Write-Host "vsearch: no markdown found under $($roots -join ', ')" -ForegroundColor Yellow; return }
+
+    $hits = @($files | Select-String -Pattern $Query -SimpleMatch:(-not $Regex) -CaseSensitive:$false -ErrorAction SilentlyContinue)
+
+    Write-Host ("vsearch '{0}' in {1}: {2} match(es) in {3} file(s)  [{4} searched]" -f `
+        $Query, $Agent, $hits.Count, ($hits.Path | Select-Object -Unique).Count, $files.Count) -ForegroundColor Cyan
+
+    $hits | ForEach-Object {
+        [pscustomobject]@{
+            File = $_.Path.Replace("$Vaults\", '')
+            Line = $_.LineNumber
+            Text = $_.Line.Trim()
+        }
+    }
 }
 
 function vopen {
-    param([string]$file)
-    Start-Process "obsidian://open?vault=EVA&file=$([uri]::EscapeDataString($file))"
+    param([Parameter(Mandatory)][string]$File, [string]$Vault = 'EVA')
+    Start-Process "obsidian://open?vault=$Vault&file=$([uri]::EscapeDataString($File))"
 }
 
 function vrecent {
-    param([int]$n = 10)
-    Get-ChildItem "C:\Vaults\EVA\wiki" -Recurse -Filter "*.md" |
-    Sort-Object LastWriteTime -Descending |
-    Select-Object -First $n Name, LastWriteTime
+    param([int]$n = 10, [ValidateSet('EVA', 'CLI', 'AUD', 'DES', 'All')][string]$Agent = 'EVA')
+    $roots = if ($Agent -eq 'All') { $Agents.Values } else { @($Agents[$Agent]) }
+    Get-VaultFiles -Roots $roots |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First $n @{n = 'Note'; e = { $_.FullName.Replace("$Vaults\", '') } }, LastWriteTime
 }
 
 # -------------------------------------------------------------------
-# Code workspace navigation and sync
+# csync — the handoff sync layer
 # -------------------------------------------------------------------
-# Note: `code` itself is the VS Code CLI (e.g. `code .` to open the
-# current directory in VS Code). Don't shadow it with a function. 'cli' is pwsh clear-item, so avoid that too.
-
-function cdcode    { Set-Location 'C:\Vaults\CLI' }
-
-function changelog { Set-Location 'C:\Vaults\CLI\changelog-app' }
-
-function prev { Set-Location 'C:\Vaults\CLI\previous-coding-adventures' }
-
-function handoff { Set-Location 'C:\Vaults\EVA\claude-sync' }
-
-function returns { Set-Location 'C:\Vaults\CLI\claude-sync' }
+#   csync          — sync based on which agent root you're standing in
+#   csync status   — read-only drift report across all flows, from anywhere
+#   csync all      — run every flow regardless of cwd
+#
+# Copies are content-addressed: a file is copied only when it's missing at
+# the destination or differs by length/hash. mtime is deliberately ignored,
+# so a touched-but-identical file does not register as drift.
+#
+# DES has no claude-sync of its own — per DES's CLAUDE.md it plugs into the
+# existing shared layer, writing handoffs and returns directly into EVA's
+# canonical claude-sync. So DES is a *route*, not a new flow: standing in
+# the DES root runs EVA -> CLI, which is what carries DES's output across.
 
 function csync {
-    param([Parameter(Position=0)][string]$Mode = "")
+    param([Parameter(Position = 0)][string]$Mode = "")
 
-    # Agent roots — single source of truth. Update if paths change (e.g. C:\Vaults -> C:\agents).
-    $EVA_ROOT = "C:\Vaults\EVA"
-    $CLI_ROOT = "C:\Vaults\CLI"
-    $AUD_ROOT = "C:\Vaults\AUD"
+    $EVA_ROOT = $Agents.EVA
+    $CLI_ROOT = $Agents.CLI
+    $AUD_ROOT = $Agents.AUD
+    $DES_ROOT = $Agents.DES
 
     # Flow definitions — the four directed copies in the ecosystem. Single source of truth.
     # Skip lets each destination keep its own README: audit-returns/ (AUD's write dir) and
     # aud/findings/ (the read-side mirror) document different things and must not clobber each other.
     $flows = @(
-        [pscustomobject]@{ Name="EVA -> CLI"; Src="$EVA_ROOT\claude-sync";               Dst="$CLI_ROOT\claude-sync";  Skip=@() },
-        [pscustomobject]@{ Name="CLI -> EVA"; Src="$CLI_ROOT\claude-sync";               Dst="$EVA_ROOT\claude-sync";  Skip=@() },
-        [pscustomobject]@{ Name="AUD -> EVA"; Src="$AUD_ROOT\claude-sync\audit-returns"; Dst="$EVA_ROOT\aud\findings"; Skip=@('README.md') },
-        [pscustomobject]@{ Name="AUD -> CLI"; Src="$AUD_ROOT\claude-sync\audit-returns"; Dst="$CLI_ROOT\aud\findings"; Skip=@('README.md') }
+        [pscustomobject]@{ Name = "EVA -> CLI"; Src = "$EVA_ROOT\claude-sync";               Dst = "$CLI_ROOT\claude-sync";  Skip = @() },
+        [pscustomobject]@{ Name = "CLI -> EVA"; Src = "$CLI_ROOT\claude-sync";               Dst = "$EVA_ROOT\claude-sync";  Skip = @() },
+        [pscustomobject]@{ Name = "AUD -> EVA"; Src = "$AUD_ROOT\claude-sync\audit-returns"; Dst = "$EVA_ROOT\aud\findings"; Skip = @('README.md') },
+        [pscustomobject]@{ Name = "AUD -> CLI"; Src = "$AUD_ROOT\claude-sync\audit-returns"; Dst = "$CLI_ROOT\aud\findings"; Skip = @('README.md') }
     )
 
     # Source files for a flow (recursive), minus skipped leaf names.
@@ -235,21 +363,25 @@ function csync {
     $route = switch ($agentRoot) {
         $EVA_ROOT { @("EVA -> CLI") }
         $CLI_ROOT { @("CLI -> EVA") }
-        $AUD_ROOT { @("AUD -> EVA","AUD -> CLI") }
+        $AUD_ROOT { @("AUD -> EVA", "AUD -> CLI") }
+        $DES_ROOT { @("EVA -> CLI") }   # DES writes into EVA's canonical claude-sync
         default   { $null }
     }
     if (-not $route) {
         Write-Host "csync: not a recognized agent root: $agentRoot" -ForegroundColor Red
-        Write-Host "  expected one of: $EVA_ROOT, $CLI_ROOT, $AUD_ROOT" -ForegroundColor Yellow
+        Write-Host "  expected one of: $EVA_ROOT, $CLI_ROOT, $AUD_ROOT, $DES_ROOT" -ForegroundColor Yellow
         return
     }
-    Write-Host ("csync: {0}" -f ($route -join ' + ')) -ForegroundColor Cyan
+    if ($agentRoot -eq $DES_ROOT) {
+        Write-Host "csync: DES (via EVA canonical) -> CLI" -ForegroundColor Cyan
+    } else {
+        Write-Host ("csync: {0}" -f ($route -join ' + ')) -ForegroundColor Cyan
+    }
     $total = 0
     foreach ($name in $route) { $total += (_run ($flows | Where-Object Name -eq $name)) }
     if ($total -eq 0) { Write-Host "  already current - nothing copied" -ForegroundColor DarkGray }
     else { Write-Host ("  done - {0} file(s) copied" -f $total) -ForegroundColor Green }
 }
-
 
 # -------------------------------------------------------------------
 # Git shortcuts
@@ -272,32 +404,35 @@ function gpush    { git push @args }
 function gpull    { git pull @args }
 function glog     { git log --oneline --graph --decorate -20 @args }
 
-
 # -------------------------------------------------------------------
 # posh-git — git-aware prompt
 # -------------------------------------------------------------------
 # Adds current branch + dirty/staged/ahead-behind indicators to the
 # prompt automatically when you cd into a git repo.
+#
+# ⚠ This is ~600ms of the ~875ms profile load. If shell startup ever starts
+#   to annoy you, this is the line to attack (lazy-load on first git dir).
 
-Import-Module posh-git -ErrorAction SilentlyContinue 
+Import-Module posh-git -ErrorAction SilentlyContinue
 
 # -------------------------------------------------------------------
 # Package Management
 # -------------------------------------------------------------------
-# Finds packages in the current environment.
+# Where is <name> installed? Checks every package manager on this box.
+#
+# Renamed from `find-package` 2026-08-07 — that name shadowed the real
+# Find-Package cmdlet from PackageManagement (functions outrank cmdlets).
 
-function find-package {
-    param([string]$name)
+function pkg {
+    param([Parameter(Mandatory)][string]$Name)
     Write-Host "--- winget ---"
-    winget list | findstr -i $name
+    winget list | findstr -i $Name
     Write-Host "--- python (pip) ---"
-    pip show $name 2>$null
+    pip show $Name 2>$null
     Write-Host "--- uv ---"
-    uv pip show $name 2>$null
+    uv pip show $Name 2>$null
     Write-Host "--- npm global ---"
-    npm list -g --depth=0 2>$null | findstr -i $name
+    npm list -g --depth=0 2>$null | findstr -i $Name
     Write-Host "--- command path ---"
-    where.exe $name 2>$null
+    where.exe $Name 2>$null
 }
-
-
