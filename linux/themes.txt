@@ -1,0 +1,4 @@
+# Omarchy themes installed from git, restored by cloning rather than vendored
+# (they are 111 MB together — the repo records where they came from instead).
+https://github.com/HANCORE-linux/omarchy-lasthorizon-theme.git  lasthorizon
+https://github.com/HANCORE-linux/omarchy-mechanoonna-theme.git  mechanoonna

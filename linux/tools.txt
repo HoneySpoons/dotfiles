@@ -1,0 +1,3 @@
+# Standalone tools that live outside pacman and mise.
+# ~/.local/bin/omarchy-web-search is a SYMLINK into this checkout, not a copy.
+https://github.com/HoneySpoons/omarchy-web-search   clone to ~/Projects, symlink into ~/.local/bin

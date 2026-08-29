@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# mic-killswitch — hard on/off for the microphone.
+#
+# "Off" means two independent things at once, so neither alone can fail open:
+#   1. the PipeWire capture source is MUTED at the device level, so anything
+#      that opens the mic receives silence, whether or not it is voxtype;
+#   2. the voxtype daemon is STOPPED, so nothing is listening for the hotkey.
+# Toggling back on reverses both.
+
+SRC='@DEFAULT_AUDIO_SOURCE@'
+
+is_muted() { wpctl get-volume "$SRC" 2>/dev/null | grep -q '\[MUTED\]'; }
+
+notify() { command -v notify-send >/dev/null && notify-send -a "Microphone" -t 2500 "$1" "$2"; }
+
+if is_muted; then
+    wpctl set-mute "$SRC" 0
+    systemctl --user start voxtype 2>/dev/null
+    notify "🎙️  MIC ON" "Capture enabled · voxtype running · SUPER+H to dictate"
+    echo "MIC ON"
+else
+    wpctl set-mute "$SRC" 1
+    systemctl --user stop voxtype 2>/dev/null
+    notify "🔇  MIC OFF" "Source muted at device level · voxtype daemon stopped"
+    echo "MIC OFF"
+fi

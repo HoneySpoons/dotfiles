@@ -89,3 +89,12 @@ The git shortcuts avoid the built-in `g`-prefixed aliases (`gc` = Get-Content, `
 - **fzf + Defender.** In 2026-05, Defender quarantined `fzf.exe` on first execution — a recurring generic false-positive against unsigned Go TUI binaries, not specific to this machine. Commit `b76e675` attributed it to a BIOS update; that was wrong (Smart App Control reads `0`/off). **Resolved 2026-08-07:** fzf 0.74.2 installs, executes, and survives. If it recurs, the fix is `Add-MpPreference -ExclusionPath` on the winget package dir (needs elevation).
 - **pwsh 7.6 native-redirect regression.** 7.6.1 broke piping into native commands, which would have broken DirPick's `$items | fzf` even with a working binary. Gone as of 7.6.4 — verified with a round-trip. The `cmd /c` workaround once spec'd for this is no longer needed.
 - **posh-git costs ~600ms** of the ~825ms profile load. Lazy-loading it is the fix if startup ever becomes annoying.
+
+---
+
+## Layout
+
+This repo now covers both halves of a dual-boot life:
+
+- **`PowerShell_profile.ps1`** (repo root) — the Windows side: path roots, navigation verbs, shell hardening for the four-agent setup.
+- **[`linux/`](linux/)** — the Omarchy side: Hyprland config, the bar, packages, and a one-command restore. See [`linux/README.md`](linux/README.md).

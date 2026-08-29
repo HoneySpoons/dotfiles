@@ -1,0 +1,3 @@
+# Omarchy shell plugins, installed by URL so there is ONE source of truth.
+# The plugin's own repo is canonical; this file only records that it belongs here.
+https://github.com/HoneySpoons/omarchy-localsend

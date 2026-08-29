@@ -1,0 +1,218 @@
+#!/usr/bin/env python3
+"""Fail-loud watchdog for Syncthing.
+
+The failure this exists to catch is not an error -- it is SILENCE. Syncthing
+will sit here looking perfectly healthy while syncing nothing at all: a peer
+that has not connected for a week, a folder someone paused, a timer that
+stopped firing. Every one of those reads as "fine" on the dashboard.
+
+So this checks the things that look fine and are not:
+
+  1. Is the daemon actually answering?
+  2. Has every remote peer been SEEN recently? (not "connected now" -- laptops
+     sleep and that is normal; the question is how long since it last worked)
+  3. Is any folder paused, erroring, or stuck out-of-sync?
+  4. Did this watchdog itself fail to run when it should have?
+
+Exit 0 healthy, 1 unhealthy. --notify sends a desktop notification; without it
+this just prints, which is what you want when running it by hand.
+"""
+
+import json
+import os
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+from pathlib import Path
+
+CONFIG = Path.home() / ".local/state/syncthing/config.xml"
+STATE = Path.home() / ".local/state/syncthing-watch/state.json"
+API = "http://127.0.0.1:8384/rest"
+
+# How long a peer may go unseen before that counts as a failure. A day is
+# generous for two machines in one house; shorten it if you want to notice sooner.
+MAX_SILENCE_H = float(os.environ.get("SYNCTHING_WATCH_MAX_SILENCE_H", "24"))
+# How long a folder may sit out-of-sync before it stops being "busy".
+MAX_OUT_OF_SYNC_H = float(os.environ.get("SYNCTHING_WATCH_MAX_OOS_H", "6"))
+# Expected gap between runs; a much larger gap means the timer stopped.
+EXPECTED_INTERVAL_MIN = float(os.environ.get("SYNCTHING_WATCH_INTERVAL_MIN", "30"))
+# Do not re-notify more often than this while a condition persists.
+RENOTIFY_H = float(os.environ.get("SYNCTHING_WATCH_RENOTIFY_H", "6"))
+
+
+def api_key():
+    return ET.parse(CONFIG).getroot().find("gui").findtext("apikey")
+
+
+def get(path, key):
+    req = urllib.request.Request(f"{API}{path}", headers={"X-API-Key": key})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.load(r)
+
+
+def load_state():
+    try:
+        return json.loads(STATE.read_text())
+    except Exception:
+        return {}
+
+
+def save_state(s):
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    STATE.write_text(json.dumps(s, indent=2))
+
+
+def age_hours(iso):
+    """Hours since an ISO timestamp. None if it is missing or the epoch."""
+    try:
+        dt = datetime.fromisoformat(iso)
+    except Exception:
+        return None
+    if dt.year < 1980:            # syncthing reports the epoch for 'never'
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - dt).total_seconds() / 3600.0
+
+
+def notify(title, body, critical=True):
+    try:
+        subprocess.run(
+            ["omarchy-notification-send",
+             "-u", "critical" if critical else "normal",
+             "-g", "󰅢", "-r", "9317",      # -r replaces the previous one rather than stacking
+             title, body],
+            check=False, timeout=15,
+        )
+    except Exception:
+        pass
+
+
+def check():
+    """Return (problems, notes)."""
+    problems, notes = [], []
+
+    try:
+        key = api_key()
+    except Exception as e:
+        return [f"cannot read Syncthing config: {e}"], notes
+
+    try:
+        get("/system/ping", key)
+    except Exception as e:
+        return [f"Syncthing is not answering on {API}: {e}"], notes
+
+    cfg = get("/config", key)
+    self_id = get("/system/status", key).get("myID")
+    stats = get("/stats/device", key)
+
+    # --- peers -------------------------------------------------------------
+    remotes = [d for d in cfg.get("devices", []) if d["deviceID"] != self_id]
+    if not remotes:
+        problems.append("no remote devices configured — nothing is being synced anywhere")
+    for d in remotes:
+        name = d.get("name") or d["deviceID"][:7]
+        if d.get("paused"):
+            problems.append(f"peer '{name}' is PAUSED — it will never sync while paused")
+            continue
+        age = age_hours((stats.get(d["deviceID"]) or {}).get("lastSeen", ""))
+        if age is None:
+            problems.append(f"peer '{name}' has NEVER connected")
+        elif age > MAX_SILENCE_H:
+            problems.append(f"peer '{name}' last seen {age:.1f}h ago (limit {MAX_SILENCE_H:.0f}h)")
+        else:
+            notes.append(f"peer '{name}' seen {age:.1f}h ago")
+
+    # --- folders -----------------------------------------------------------
+    for f in cfg.get("folders", []):
+        fid, label = f["id"], (f.get("label") or f["id"])
+        if f.get("paused"):
+            problems.append(f"folder '{label}' is PAUSED — it looks configured but syncs nothing")
+            continue
+        try:
+            st = get(f"/db/status?folder={fid}", key)
+        except Exception as e:
+            problems.append(f"folder '{label}': cannot read status ({e})")
+            continue
+        if st.get("errors", 0):
+            problems.append(f"folder '{label}' has {st['errors']} error(s)")
+        shared = [d for d in f.get("devices", []) if d["deviceID"] != self_id]
+        if not shared:
+            problems.append(f"folder '{label}' is shared with nobody — it syncs to nothing")
+        need = st.get("needTotalItems", 0)
+        if need:
+            age = age_hours(st.get("stateChanged", ""))
+            if age is not None and age > MAX_OUT_OF_SYNC_H:
+                problems.append(f"folder '{label}' has been out of sync for {age:.1f}h ({need} items)")
+            else:
+                notes.append(f"folder '{label}' syncing, {need} items left")
+        else:
+            notes.append(f"folder '{label}' in sync ({st.get('localFiles',0)} files)")
+
+    return problems, notes
+
+
+def main():
+    do_notify = "--notify" in sys.argv
+    state = load_state()
+    now = time.time()
+
+    # --- did WE fail to run? ----------------------------------------------
+    # Nothing else watches the watchdog, so it checks its own last run. A gap
+    # far larger than the timer interval means the timer stopped, or the
+    # machine was off -- either way the sync was unobserved for that window.
+    gap_note = None
+    last_run = state.get("last_run")
+    if last_run:
+        gap_min = (now - last_run) / 60
+        if gap_min > EXPECTED_INTERVAL_MIN * 4:
+            gap_note = (f"watchdog did not run for {gap_min/60:.1f}h "
+                        f"(expected every {EXPECTED_INTERVAL_MIN:.0f}m) — sync was unobserved in that window")
+
+    problems, notes = check()
+    if gap_note:
+        notes.append(gap_note)
+
+    healthy = not problems
+    first_bad = state.get("unhealthy_since")
+    if healthy:
+        first_bad = None
+    elif not first_bad:
+        first_bad = now
+
+    for line in problems:
+        print(f"PROBLEM  {line}")
+    for line in notes:
+        print(f"ok       {line}")
+
+    if not healthy and first_bad:
+        dur_h = (now - first_bad) / 3600
+        print(f"\nUNHEALTHY for {dur_h:.1f}h")
+        if do_notify:
+            last_notified = state.get("last_notified", 0)
+            if now - last_notified > RENOTIFY_H * 3600:
+                notify("Syncthing is not syncing",
+                       f"{problems[0]}" + (f" (+{len(problems)-1} more)" if len(problems) > 1 else "")
+                       + f"\nUnhealthy for {dur_h:.1f}h.",
+                       critical=True)
+                state["last_notified"] = now
+    elif healthy:
+        print("\nHEALTHY")
+        # Recovery is worth one notification: a silence that ends should be
+        # as visible as one that starts.
+        if do_notify and state.get("unhealthy_since"):
+            notify("Syncthing recovered", "All folders in sync and peers seen.", critical=False)
+            state["last_notified"] = 0
+
+    state["last_run"] = now
+    state["unhealthy_since"] = first_bad
+    save_state(state)
+    return 0 if healthy else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
