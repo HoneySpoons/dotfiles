@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# bashref -- a ground-up bash reference, on SUPER+B.
+#
+# Sheets are plain markdown in ~/.local/share/bashref/, read in filename order.
+# To add to it: drop another NN-name.md in that folder. Nothing to rebuild.
+#
+#   bashref              everything
+#   bashref localhost    only sheets whose name or content matches
+#   bashref --list       what sheets exist
+#
+# Inside the pager: / searches, n = next hit, q = quit.
+
+set -uo pipefail
+DIR="${BASHREF_DIR:-$HOME/.local/share/bashref}"
+
+[ -d "$DIR" ] || { echo "no sheets at $DIR"; exit 1; }
+shopt -s nullglob
+sheets=("$DIR"/*.md)
+[ ${#sheets[@]} -gt 0 ] || { echo "no .md sheets in $DIR"; exit 1; }
+
+if [ "${1:-}" = "--list" ]; then
+  for f in "${sheets[@]}"; do printf '  %-16s %s\n' "$(basename "${f%.md}")" "$(head -1 "$f" | sed 's/^# *//')"; done
+  exit 0
+fi
+
+if [ -n "${1:-}" ]; then
+  matched=()
+  for f in "${sheets[@]}"; do
+    if [[ "$(basename "$f")" == *"$1"* ]] || grep -qi -- "$1" "$f"; then matched+=("$f"); fi
+  done
+  [ ${#matched[@]} -gt 0 ] && sheets=("${matched[@]}") \
+    || { echo "nothing matches '$1'"; exit 1; }
+fi
+
+render() { for f in "${sheets[@]}"; do cat "$f"; echo; done; }
+
+# bat gives syntax colour and honours the terminal theme; less is the fallback.
+if command -v bat >/dev/null 2>&1; then
+  render | bat --language=markdown --style=plain --paging=always \
+               --pager="less -R -S --mouse -Ps'bashref  —  / search   n next   q quit'"
+else
+  render | less -R -S -Ps'bashref  —  / search   n next   q quit'
+fi

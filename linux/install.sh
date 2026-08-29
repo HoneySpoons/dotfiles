@@ -52,6 +52,12 @@ for s in "$HERE"/bin/*; do
   run chmod +x "$HOME/.local/bin/$(basename "$s")"
 done
 
+# bashref's cheat sheets (SUPER+B). Plain markdown, read in filename order --
+# adding a sheet is dropping a file in, so this just mirrors the whole folder.
+for s in "$HERE"/share/bashref/*.md; do
+  place "$s" "$HOME/.local/share/bashref/$(basename "$s")"
+done
+
 say "4/6  mise tools  (this regenerates the ~/.local/bin shims — they are NOT stored in git)"
 if command -v mise >/dev/null; then
   run mise install

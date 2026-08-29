@@ -48,3 +48,12 @@ o.bind("SUPER + Q", "Search the web", "omarchy-web-search")
 hl.unbind("SUPER + F")
 o.bind("SUPER + F", "Full screen (keep app chrome)",
   hl.dsp.window.fullscreen_state({ internal = 2, client = 0, action = "toggle" }))
+
+-- ── Bash reference ────────────────────────────────────────────────────
+-- SUPER+B pops a floating, searchable bash cheat sheet over whatever you're
+-- doing. Sheets are plain markdown in ~/.local/share/bashref/ -- drop another
+-- NN-name.md in there and it appears; nothing to rebuild.
+-- Inside it: / searches, n = next hit, q = quit.
+-- Routed through omarchy-launch-tui so it follows the default terminal.
+o.bind("SUPER + B", "Bash reference",
+  "omarchy-launch-tui --app-id=TUI.bashref /home/honeyspoons/.local/bin/bashref")

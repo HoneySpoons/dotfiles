@@ -27,3 +27,13 @@ require("default.hypr.toggles")
 
 -- Add any other personal Hyprland configuration below.
 -- o.window("qemu", { workspace = "5" })
+
+-- Float the bash reference (SUPER+B) over the current window instead of
+-- tiling it, so it never disturbs the terminal you're working in.
+-- TUI.* already carries Omarchy's terminal tag, so it inherits the theme.
+o.window("TUI\\.bashref", { float = true, center = true })
+-- Pixels, not percentages: percentage strings are silently ignored by this
+-- rule form on Hyprland 0.56 (verified -- the window fell back to ghostty's
+-- own 800x600). Sized for this panel's 1280x800 logical space; on a smaller
+-- display Hyprland clamps, which is the graceful direction to fail.
+o.window("TUI\\.bashref", { size = { 1040, 660 } })
