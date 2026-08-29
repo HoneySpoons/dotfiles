@@ -19,7 +19,29 @@
     git push                  send it up
 
     git log --oneline -10     last 10 commits, one line each
-    git show HEAD:path/file   the committed version of a file
+
+# Commit hashes — what 0987676 is
+
+Every commit is a snapshot of the whole repo, named by a hash computed FROM
+its contents. The full name is 40 hex characters; the first 7 are enough:
+
+    09876766efee1a68a49f22b9f54e579cec131c4f     the real name
+    0987676                                      what you actually type
+
+Because the name comes from the content, nothing can be edited or reordered
+without changing it. That is what makes the history trustworthy.
+
+    git show 0987676            what changed in that commit, and why
+    git diff 0987676 HEAD       everything that changed since then
+    git show 0987676:Home.md    Home.md exactly as it was at that moment
+
+`HEAD` means "the latest commit", so `git show HEAD:file` is the same move
+against the most recent one. That is the vault's recovery protocol when a
+file reads as blank:
+
+    git show HEAD:"Next Steps.MD"
+
+A hash lets you reach any specific commit instead of just the last one.
 
 # Reading a path
 
