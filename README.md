@@ -97,4 +97,4 @@ The git shortcuts avoid the built-in `g`-prefixed aliases (`gc` = Get-Content, `
 This repo now covers both halves of a dual-boot life:
 
 - **`PowerShell_profile.ps1`** (repo root) — the Windows side: path roots, navigation verbs, shell hardening for the four-agent setup.
-- **[`linux/`](linux/)** — the Omarchy side: Hyprland config, the bar, packages, and a one-command restore. See [`linux/README.md`](linux/README.md).
+- **[`linux/`](linux/)** — the Omarchy side: Hyprland config, the bar, packages, a one-command restore, and `bashref` (a floating bash reference on `SUPER+B`). See [`linux/README.md`](linux/README.md).

@@ -36,14 +36,29 @@ config/hypr/        autostart · bindings · hyprland · input · looknfeel · m
 config/omarchy/     shell.json (the bar), branding/about + screensaver,
                     defaults/agent, extensions/omarchy-menu.jsonc
 config/mise-config.toml   claude · codex · gh · node · ruby
-bin/                mic-killswitch · syncthing-watch · upower-sanity
-                    — the three scripts actually written here
+bin/                bashref · mic-killswitch · syncthing-watch · upower-sanity
+                    — the four scripts actually written here
+share/bashref/      the reference `bashref` renders. Growing it is dropping an
+                    `NN-name.md` in; there is nothing to rebuild.
 themes.txt / plugins.txt / tools.txt      pointers, per the rule above
 install.sh          idempotent; backs up anything it would overwrite
 ```
 
 Most of `~/.config/omarchy/hooks/` and `themed/` are untouched stock `.sample` files and
 are not carried — if one is ever edited, it belongs here.
+
+## bashref — `SUPER+B`
+
+A floating, searchable bash reference, for the moment you are in a terminal trying to
+start a localhost and the answer is three commands you half-remember. Plain markdown in
+`share/bashref/`, rendered by `bin/bashref`; add a file, it appears.
+
+Routed through `omarchy-launch-tui` rather than hardcoding a terminal, so it follows
+`xdg-terminal-exec` and does not care which one is installed.
+
+⚠️ **Percentage window sizing is silently ignored** by this window-rule form on
+Hyprland 0.56 — no error, the window just falls back to the terminal's own 800x600. The
+rule uses pixels, and the reason is written into the config so it is not re-tried.
 
 ## ⚠️ What this does NOT restore, on purpose
 
